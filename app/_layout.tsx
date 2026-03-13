@@ -1,57 +1,79 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { View, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ThemeProvider, useTheme } from '../lib/ThemeContext';
+import { ProfileService } from '../lib/services/profile.service';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import '../global.css';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
-
-export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+function RootStack() {
+  const { isDark, colors } = useTheme();
+  const [isReady, setIsReady] = useState(false);
+  const [hasSetup, setHasSetup] = useState(false);
+  const router = useRouter();
+  const segments = useSegments();
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+    (async () => {
+      const completed = await ProfileService.hasCompletedSetup();
+      setHasSetup(completed);
+      setIsReady(true);
+    })();
+  }, []);
 
-  if (!loaded) {
-    return null;
+  useEffect(() => {
+    if (!isReady) return;
+
+    (async () => {
+      const inOnboarding = segments[0] === 'onboarding';
+      const actuallyHasSetup = await ProfileService.hasCompletedSetup();
+
+      if (actuallyHasSetup !== hasSetup) {
+        setHasSetup(actuallyHasSetup);
+      }
+
+      if (!actuallyHasSetup && !inOnboarding) {
+        router.replace('/onboarding');
+      }
+    })();
+  }, [isReady, segments]);
+
+  if (!isReady) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
   }
 
-  return <RootLayoutNav />;
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="settings/index" />
+      </Stack>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+    </>
+  );
 }
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
-
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <RootStack />
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
